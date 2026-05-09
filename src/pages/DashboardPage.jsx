@@ -19,7 +19,15 @@ import {
 import GlassCard from "../components/GlassCard";
 import { roadmapData, quotes } from "../data/roadmapData";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { calculateCourseProgress, getTodayKey, randomQuote } from "../utils/helpers";
+import {
+  calculateCourseProgress,
+  createId,
+  deriveRoadmapProgress,
+  deriveRoadmapStatus,
+  getTodayKey,
+  normalizeRoadmap,
+  randomQuote,
+} from "../utils/helpers";
 import { useTheme } from "../context/ThemeContext";
 
 const debugLog = (hypothesisId, message, data = {}, runId = "pre-fix") => {
@@ -83,6 +91,13 @@ const DashboardPage = () => {
   const [taskInput, setTaskInput] = useState({ title: "", priority: "Medium", dueDate: "" });
   const [noteInput, setNoteInput] = useState({ title: "", body: "" });
   const [goalInput, setGoalInput] = useState({ type: "shortTerm", value: "" });
+  const [roadmapInput, setRoadmapInput] = useState({ title: "", description: "" });
+  const [editingRoadmapId, setEditingRoadmapId] = useState(null);
+  const [editingRoadmapDraft, setEditingRoadmapDraft] = useState({ title: "", description: "" });
+  const [expandedRoadmap, setExpandedRoadmap] = useState({});
+  const [subtopicDrafts, setSubtopicDrafts] = useState({});
+  const [resourceDrafts, setResourceDrafts] = useState({});
+  const didNormalizeRoadmapRef = useRef(false);
 
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((t) => t.completed).length;
@@ -113,6 +128,12 @@ const DashboardPage = () => {
     });
     // #endregion
   }, []);
+
+  useEffect(() => {
+    if (didNormalizeRoadmapRef.current) return;
+    didNormalizeRoadmapRef.current = true;
+    setRoadmap((prev) => normalizeRoadmap(prev));
+  }, [setRoadmap]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -172,16 +193,188 @@ const DashboardPage = () => {
     setTasks((prev) => prev.map((task) => (task.id === id ? { ...task, title: value } : task)));
   };
 
-  const updateRoadmapProgress = (id) => {
-    setRoadmap((prev) =>
-      prev.map((item) => {
-        if (item.id !== id) return item;
-        const progress = Math.min(item.progress + 10, 100);
-        const status = progress === 100 ? "Completed" : "Ongoing";
-        return { ...item, progress, status };
-      })
+  const updateRoadmapCollection = (updater) => {
+    setRoadmap((prev) => {
+      const normalized = normalizeRoadmap(prev);
+      const updated = updater(normalized).map((item) => {
+        const progress = deriveRoadmapProgress(item.subtopics);
+        return {
+          ...item,
+          progress,
+          status: deriveRoadmapStatus(progress),
+        };
+      });
+      // #region agent log
+      debugLog("H11", "Roadmap collection updated", {
+        beforeCount: normalized.length,
+        afterCount: updated.length,
+      });
+      // #endregion
+      return updated;
+    });
+  };
+
+  const addRoadmapItem = () => {
+    if (!roadmapInput.title.trim()) return;
+    // #region agent log
+    debugLog("H12", "Add roadmap requested", {
+      titleLength: roadmapInput.title.trim().length,
+      hasDescription: Boolean(roadmapInput.description.trim()),
+    });
+    // #endregion
+    updateRoadmapCollection((items) => [
+      ...items,
+      {
+        id: createId(),
+        title: roadmapInput.title.trim(),
+        description:
+          roadmapInput.description.trim() ||
+          "Add subtopics and resources to shape this roadmap.",
+        subtopics: [],
+        resources: [],
+      },
+    ]);
+    setRoadmapInput({ title: "", description: "" });
+    toast.success("Roadmap card added");
+  };
+
+  const startRoadmapEdit = (item) => {
+    setEditingRoadmapId(item.id);
+    setEditingRoadmapDraft({
+      title: item.title,
+      description: item.description,
+    });
+  };
+
+  const saveRoadmapEdit = (id) => {
+    if (!editingRoadmapDraft.title.trim()) return;
+    // #region agent log
+    debugLog("H13", "Save roadmap edit requested", {
+      id,
+      newTitleLength: editingRoadmapDraft.title.trim().length,
+    });
+    // #endregion
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              title: editingRoadmapDraft.title.trim(),
+              description: editingRoadmapDraft.description.trim(),
+            }
+          : item
+      )
     );
-    toast.success("Roadmap progress updated");
+    setEditingRoadmapId(null);
+    setEditingRoadmapDraft({ title: "", description: "" });
+    toast.success("Roadmap updated");
+  };
+
+  const deleteRoadmapItem = (id) => {
+    updateRoadmapCollection((items) => items.filter((item) => item.id !== id));
+    toast.success("Roadmap deleted");
+  };
+
+  const toggleRoadmapExpanded = (id) => {
+    setExpandedRoadmap((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const addSubtopic = (roadmapId) => {
+    const raw = subtopicDrafts[roadmapId] || "";
+    if (!raw.trim()) return;
+    // #region agent log
+    debugLog("H14", "Add subtopic requested", {
+      roadmapId,
+      subtopicLength: raw.trim().length,
+    });
+    // #endregion
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? {
+              ...item,
+              subtopics: [...item.subtopics, { id: createId(), title: raw.trim(), completed: false }],
+            }
+          : item
+      )
+    );
+    setSubtopicDrafts((prev) => ({ ...prev, [roadmapId]: "" }));
+  };
+
+  const updateSubtopic = (roadmapId, subtopicId, patch) => {
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? {
+              ...item,
+              subtopics: item.subtopics.map((topic) =>
+                topic.id === subtopicId ? { ...topic, ...patch } : topic
+              ),
+            }
+          : item
+      )
+    );
+  };
+
+  const deleteSubtopic = (roadmapId, subtopicId) => {
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? { ...item, subtopics: item.subtopics.filter((topic) => topic.id !== subtopicId) }
+          : item
+      )
+    );
+  };
+
+  const addResource = (roadmapId) => {
+    const draft = resourceDrafts[roadmapId] || { label: "", url: "" };
+    if (!draft.label?.trim()) return;
+    // #region agent log
+    debugLog("H15", "Add resource requested", {
+      roadmapId,
+      hasLabel: Boolean(draft.label?.trim()),
+      hasUrl: Boolean(draft.url?.trim()),
+    });
+    // #endregion
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? {
+              ...item,
+              resources: [
+                ...item.resources,
+                { id: createId(), label: draft.label.trim(), url: draft.url?.trim() || "" },
+              ],
+            }
+          : item
+      )
+    );
+    setResourceDrafts((prev) => ({ ...prev, [roadmapId]: { label: "", url: "" } }));
+  };
+
+  const updateResource = (roadmapId, resourceId, patch) => {
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? {
+              ...item,
+              resources: item.resources.map((resource) =>
+                resource.id === resourceId ? { ...resource, ...patch } : resource
+              ),
+            }
+          : item
+      )
+    );
+  };
+
+  const deleteResource = (roadmapId, resourceId) => {
+    updateRoadmapCollection((items) =>
+      items.map((item) =>
+        item.id === roadmapId
+          ? { ...item, resources: item.resources.filter((resource) => resource.id !== resourceId) }
+          : item
+      )
+    );
   };
 
   const addNote = () => {
@@ -296,26 +489,266 @@ const DashboardPage = () => {
             )}
 
             {section === "roadmap" && (
-              <motion.div key="roadmap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid gap-3 md:grid-cols-2">
-                {roadmap.map((item) => (
-                  <GlassCard key={item.id}>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className="font-semibold">{item.category}</p>
-                        <p className="text-sm text-slate-400">{item.course}</p>
-                      </div>
-                      <span className="rounded-lg bg-white/10 px-2 py-1 text-xs">{item.status}</span>
-                    </div>
-                    <p className="mt-2 text-sm">Platform: {item.platform} | {item.duration}</p>
-                    <p className="mt-1 text-xs text-slate-400">{item.start} to {item.end}</p>
-                    <div className="mt-3 h-2 rounded-full bg-white/10">
-                      <div className="h-2 rounded-full bg-gradient-to-r from-cyan-400 to-indigo-500" style={{ width: `${item.progress}%` }} />
-                    </div>
-                    <button onClick={() => updateRoadmapProgress(item.id)} className="mt-3 rounded-lg bg-gradient-to-r from-cyan-500 to-indigo-500 px-3 py-2 text-xs font-semibold text-white">
-                      Update Progress
+              <motion.div key="roadmap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                <GlassCard className="roadmap-hero">
+                  <div className="roadmap-add-grid">
+                    <input
+                      value={roadmapInput.title}
+                      onChange={(e) => setRoadmapInput((prev) => ({ ...prev, title: e.target.value }))}
+                      placeholder="Add new roadmap title..."
+                      className="rounded-xl bg-white/10 px-3 py-2 outline-none"
+                    />
+                    <input
+                      value={roadmapInput.description}
+                      onChange={(e) =>
+                        setRoadmapInput((prev) => ({ ...prev, description: e.target.value }))
+                      }
+                      placeholder="Description (optional)"
+                      className="rounded-xl bg-white/10 px-3 py-2 outline-none"
+                    />
+                    <button
+                      onClick={addRoadmapItem}
+                      className="rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 px-3 py-2 font-semibold text-white"
+                    >
+                      <FaPlus className="mr-1 inline" />
+                      Add Roadmap Card
                     </button>
-                  </GlassCard>
-                ))}
+                  </div>
+                </GlassCard>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {normalizeRoadmap(roadmap).map((item) => {
+                    const done = item.subtopics.filter((topic) => topic.completed).length;
+                    const expanded = Boolean(expandedRoadmap[item.id]);
+                    const editing = editingRoadmapId === item.id;
+                    return (
+                      <GlassCard key={item.id} className="roadmap-card">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="space-y-2">
+                            {editing ? (
+                              <>
+                                <input
+                                  value={editingRoadmapDraft.title}
+                                  onChange={(e) =>
+                                    setEditingRoadmapDraft((prev) => ({
+                                      ...prev,
+                                      title: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded-lg bg-white/10 px-2 py-2 text-sm font-semibold outline-none"
+                                />
+                                <textarea
+                                  rows={2}
+                                  value={editingRoadmapDraft.description}
+                                  onChange={(e) =>
+                                    setEditingRoadmapDraft((prev) => ({
+                                      ...prev,
+                                      description: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded-lg bg-white/10 px-2 py-2 text-sm outline-none"
+                                />
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-lg font-semibold text-white">{item.title}</p>
+                                <p className="text-sm text-slate-300">{item.description}</p>
+                              </>
+                            )}
+                          </div>
+                          <div className="roadmap-progress-chip">
+                            <span>{item.progress}%</span>
+                            <small>{item.status}</small>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 h-2 rounded-full bg-white/10">
+                          <div
+                            className="h-2 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-500 transition-all"
+                            style={{ width: `${item.progress}%` }}
+                          />
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {done}/{item.subtopics.length || 0} subtopics completed
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {editing ? (
+                            <>
+                              <button
+                                onClick={() => saveRoadmapEdit(item.id)}
+                                className="rounded-lg bg-emerald-500/25 px-3 py-2 text-xs font-semibold text-emerald-200"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingRoadmapId(null)}
+                                className="rounded-lg bg-white/10 px-3 py-2 text-xs"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => startRoadmapEdit(item)}
+                              className="rounded-lg bg-white/10 px-3 py-2 text-xs"
+                            >
+                              Edit Card
+                            </button>
+                          )}
+                          <button
+                            onClick={() => toggleRoadmapExpanded(item.id)}
+                            className="rounded-lg bg-cyan-500/20 px-3 py-2 text-xs text-cyan-200"
+                          >
+                            {expanded ? "Collapse" : "Open Details"}
+                          </button>
+                          <button
+                            onClick={() => deleteRoadmapItem(item.id)}
+                            className="rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-200"
+                          >
+                            Delete
+                          </button>
+                        </div>
+
+                        {expanded && (
+                          <div className="roadmap-details mt-4 space-y-4">
+                            <div>
+                              <p className="mb-2 text-sm font-semibold text-cyan-300">Subtopics</p>
+                              <div className="space-y-2">
+                                {item.subtopics.map((topic) => (
+                                  <div
+                                    key={topic.id}
+                                    className="flex flex-wrap items-center gap-2 rounded-lg bg-white/5 p-2"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={topic.completed}
+                                      onChange={() =>
+                                        updateSubtopic(item.id, topic.id, {
+                                          completed: !topic.completed,
+                                        })
+                                      }
+                                    />
+                                    <input
+                                      value={topic.title}
+                                      onChange={(e) =>
+                                        updateSubtopic(item.id, topic.id, {
+                                          title: e.target.value,
+                                        })
+                                      }
+                                      className="flex-1 rounded-lg bg-white/10 px-2 py-1 text-sm outline-none"
+                                    />
+                                    <button
+                                      onClick={() => deleteSubtopic(item.id, topic.id)}
+                                      className="rounded-md bg-rose-500/20 px-2 py-1 text-xs text-rose-200"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <input
+                                  value={subtopicDrafts[item.id] || ""}
+                                  onChange={(e) =>
+                                    setSubtopicDrafts((prev) => ({
+                                      ...prev,
+                                      [item.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Add new subtopic..."
+                                  className="flex-1 rounded-lg bg-white/10 px-2 py-2 text-sm outline-none"
+                                />
+                                <button
+                                  onClick={() => addSubtopic(item.id)}
+                                  className="rounded-lg bg-cyan-500/25 px-3 py-2 text-xs font-semibold text-cyan-200"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="mb-2 text-sm font-semibold text-indigo-300">Resources</p>
+                              <div className="space-y-2">
+                                {item.resources.map((resource) => (
+                                  <div
+                                    key={resource.id}
+                                    className="grid gap-2 rounded-lg bg-white/5 p-2 md:grid-cols-[1fr_1fr_auto]"
+                                  >
+                                    <input
+                                      value={resource.label}
+                                      onChange={(e) =>
+                                        updateResource(item.id, resource.id, {
+                                          label: e.target.value,
+                                        })
+                                      }
+                                      placeholder="Resource name"
+                                      className="rounded-lg bg-white/10 px-2 py-1 text-sm outline-none"
+                                    />
+                                    <input
+                                      value={resource.url}
+                                      onChange={(e) =>
+                                        updateResource(item.id, resource.id, {
+                                          url: e.target.value,
+                                        })
+                                      }
+                                      placeholder="URL"
+                                      className="rounded-lg bg-white/10 px-2 py-1 text-sm outline-none"
+                                    />
+                                    <button
+                                      onClick={() => deleteResource(item.id, resource.id)}
+                                      className="rounded-md bg-rose-500/20 px-2 py-1 text-xs text-rose-200"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                                <input
+                                  value={resourceDrafts[item.id]?.label || ""}
+                                  onChange={(e) =>
+                                    setResourceDrafts((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...(prev[item.id] || { label: "", url: "" }),
+                                        label: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Resource label"
+                                  className="rounded-lg bg-white/10 px-2 py-2 text-sm outline-none"
+                                />
+                                <input
+                                  value={resourceDrafts[item.id]?.url || ""}
+                                  onChange={(e) =>
+                                    setResourceDrafts((prev) => ({
+                                      ...prev,
+                                      [item.id]: {
+                                        ...(prev[item.id] || { label: "", url: "" }),
+                                        url: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="https://..."
+                                  className="rounded-lg bg-white/10 px-2 py-2 text-sm outline-none"
+                                />
+                                <button
+                                  onClick={() => addResource(item.id)}
+                                  className="rounded-lg bg-indigo-500/25 px-3 py-2 text-xs font-semibold text-indigo-200"
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </GlassCard>
+                    );
+                  })}
+                </div>
               </motion.div>
             )}
 
