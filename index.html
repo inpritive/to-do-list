@@ -13,6 +13,47 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // #region agent log
+      (function () {
+        const send = (hypothesisId, message, data) => {
+          fetch("http://127.0.0.1:7843/ingest/7a4d52b4-ee87-4a24-94ae-4ee7a73399c7", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Debug-Session-Id": "acbfb6",
+            },
+            body: JSON.stringify({
+              sessionId: "acbfb6",
+              runId: "pre-fix",
+              hypothesisId,
+              location: "index.html:inline",
+              message,
+              data,
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+        };
+
+        send("H7", "index inline script executed", { href: location.href });
+
+        window.addEventListener("error", function (event) {
+          send("H8", "window error", {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+          });
+        });
+
+        window.addEventListener("unhandledrejection", function (event) {
+          send("H8", "unhandled rejection", {
+            reason: String(event.reason),
+          });
+        });
+      })();
+      // #endregion
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

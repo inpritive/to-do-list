@@ -7,13 +7,13 @@ import {
   FaBullseye,
   FaCheckCircle,
   FaClock,
+  FaListCheck,
   FaMoon,
   FaNoteSticky,
   FaPlay,
   FaPlus,
   FaSearch,
   FaSun,
-  FaTasks,
   FaTrash,
 } from "react-icons/fa6";
 import GlassCard from "../components/GlassCard";
@@ -21,6 +21,25 @@ import { roadmapData, quotes } from "../data/roadmapData";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { calculateCourseProgress, getTodayKey, randomQuote } from "../utils/helpers";
 import { useTheme } from "../context/ThemeContext";
+
+const debugLog = (hypothesisId, message, data = {}, runId = "pre-fix") => {
+  fetch("http://127.0.0.1:7843/ingest/7a4d52b4-ee87-4a24-94ae-4ee7a73399c7", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "acbfb6",
+    },
+    body: JSON.stringify({
+      sessionId: "acbfb6",
+      runId,
+      hypothesisId,
+      location: "src/pages/DashboardPage.jsx",
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+};
 
 const DashboardPage = () => {
   const [roadmap, setRoadmap] = useLocalStorage("aiml-roadmap", roadmapData);
@@ -43,6 +62,10 @@ const DashboardPage = () => {
   const [section, setSection] = useState("dashboard");
   const { theme, toggleTheme } = useTheme();
   const [quote] = useState(randomQuote(quotes));
+
+  // #region agent log
+  debugLog("H1", "DashboardPage render reached", { theme, section, tasksCount: tasks.length });
+  // #endregion
 
   const [taskInput, setTaskInput] = useState({ title: "", priority: "Medium", dueDate: "" });
   const [noteInput, setNoteInput] = useState({ title: "", body: "" });
@@ -67,6 +90,16 @@ const DashboardPage = () => {
       n.title.toLowerCase().includes(noteSearch.toLowerCase()) ||
       n.body.toLowerCase().includes(noteSearch.toLowerCase())
   );
+
+  useEffect(() => {
+    // #region agent log
+    debugLog("H2", "DashboardPage mounted", {
+      roadmapItems: roadmap.length,
+      totalTasks: tasks.length,
+      completedTasks: tasks.filter((t) => t.completed).length,
+    });
+    // #endregion
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -158,7 +191,7 @@ const DashboardPage = () => {
   const sections = [
     { id: "dashboard", label: "Dashboard", icon: FaBook },
     { id: "roadmap", label: "Roadmap", icon: FaBullseye },
-    { id: "tasks", label: "Smart Tasks", icon: FaTasks },
+    { id: "tasks", label: "Smart Tasks", icon: FaListCheck },
     { id: "notes", label: "Notes", icon: FaNoteSticky },
     { id: "tracker", label: "Consistency", icon: FaClock },
     { id: "goals", label: "Goals", icon: FaCheckCircle },
