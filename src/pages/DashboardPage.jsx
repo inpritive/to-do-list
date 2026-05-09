@@ -12,7 +12,7 @@ import {
   FaNoteSticky,
   FaPlay,
   FaPlus,
-  FaSearch,
+  FaMagnifyingGlass,
   FaSun,
   FaTrash,
 } from "react-icons/fa6";
@@ -311,7 +311,7 @@ const DashboardPage = () => {
                       <button key={f} onClick={() => setActiveFilter(f)} className={`rounded-lg px-3 py-1 text-xs ${activeFilter === f ? "bg-cyan-500 text-white" : "bg-white/10"}`}>{f}</button>
                     ))}
                     <div className="ml-auto flex items-center gap-2 rounded-lg bg-white/10 px-2">
-                      <FaSearch className="text-xs text-slate-400" />
+                      <FaMagnifyingGlass className="text-xs text-slate-400" />
                       <input value={taskSearch} onChange={(e) => setTaskSearch(e.target.value)} placeholder="Search tasks" className="bg-transparent px-1 py-1 text-sm outline-none" />
                     </div>
                   </div>
@@ -339,7 +339,7 @@ const DashboardPage = () => {
                     <div className="flex items-center justify-between">
                       <button onClick={addNote} className="rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 px-4 py-2 font-semibold text-white">Save Note</button>
                       <div className="flex items-center gap-2 rounded-lg bg-white/10 px-2">
-                        <FaSearch className="text-xs text-slate-400" />
+                        <FaMagnifyingGlass className="text-xs text-slate-400" />
                         <input value={noteSearch} onChange={(e) => setNoteSearch(e.target.value)} placeholder="Search notes" className="bg-transparent py-1 text-sm outline-none" />
                       </div>
                     </div>
