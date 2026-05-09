@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import {
   FaBook,
   FaBullseye,
-  FaCheckCircle,
+  FaCircleCheck,
   FaClock,
   FaListCheck,
   FaMoon,
@@ -194,7 +194,7 @@ const DashboardPage = () => {
     { id: "tasks", label: "Smart Tasks", icon: FaListCheck },
     { id: "notes", label: "Notes", icon: FaNoteSticky },
     { id: "tracker", label: "Consistency", icon: FaClock },
-    { id: "goals", label: "Goals", icon: FaCheckCircle },
+    { id: "goals", label: "Goals", icon: FaCircleCheck },
   ];
 
   return (
