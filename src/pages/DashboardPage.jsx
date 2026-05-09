@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Confetti from "react-confetti";
 import toast from "react-hot-toast";
@@ -62,10 +62,23 @@ const DashboardPage = () => {
   const [section, setSection] = useState("dashboard");
   const { theme, toggleTheme } = useTheme();
   const [quote] = useState(randomQuote(quotes));
+  const renderCountRef = useRef(0);
 
   // #region agent log
   debugLog("H1", "DashboardPage render reached", { theme, section, tasksCount: tasks.length });
   // #endregion
+  renderCountRef.current += 1;
+
+  if (renderCountRef.current % 20 === 0) {
+    // #region agent log
+    debugLog("H9", "High render count checkpoint", {
+      renderCount: renderCountRef.current,
+      running,
+      section,
+      tasksCount: tasks.length,
+    });
+    // #endregion
+  }
 
   const [taskInput, setTaskInput] = useState({ title: "", priority: "Medium", dueDate: "" });
   const [noteInput, setNoteInput] = useState({ title: "", body: "" });
@@ -115,6 +128,12 @@ const DashboardPage = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, [running]);
+
+  useEffect(() => {
+    // #region agent log
+    debugLog("H10", "Section changed", { section });
+    // #endregion
+  }, [section]);
 
   const formatTime = (seconds) => {
     const m = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -216,7 +235,12 @@ const DashboardPage = () => {
               {sections.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setSection(item.id)}
+                  onClick={() => {
+                    // #region agent log
+                    debugLog("H10", "Section click", { targetSection: item.id, currentSection: section });
+                    // #endregion
+                    setSection(item.id);
+                  }}
                   className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left ${
                     section === item.id
                       ? "bg-gradient-to-r from-cyan-500 to-indigo-500 text-white"
